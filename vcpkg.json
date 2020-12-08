@@ -1,0 +1,17 @@
+{
+  "name": "pangolin",
+  "version-string": "0.0.1",
+  "dependencies": [
+    "glew",
+    "eigen3",
+    "libjpeg-turbo",
+    "libpng",
+    "openexr",
+    "tiff",
+    "ffmpeg",
+    "lz4",
+    "zstd",
+    "openni2",
+    "realsense2"
+  ]
+}

@@ -14,105 +14,58 @@ jobs:
     runs-on: ${{ matrix.os }}
 
     strategy:
+      fail-fast: false
       matrix:
         include:
         - os: ubuntu-20.04
-          package_manager: "apt-get"
-
+          triplet: x64-linux
         - os: macos-11.0
-          package_manager: "brew"
-
+          triplet: x64-osx
         - os: windows-2019
-          package_manager: "vcpkg"
-
+          triplet: x64-windows-static
     steps:
     - name: Checkout Pangolin
       uses: actions/checkout@v2
       with:
         submodules: true
+    
+    - uses: lukka/get-cmake@latest
+    
+    - run: |
+        sudo apt-get install yasm mesa-common-dev dark
+      if: contains( matrix.os, 'ubuntu')
 
-    - name: "(vcpkg only) Setup cache key"
-      if: ${{ matrix.package_manager == 'vcpkg' }}
-      run: |
-        export PACKAGES=$($GITHUB_WORKSPACE/scripts/install_prerequisites.sh -l -m ${{matrix.package_manager}} all)
-        echo "PACKAGES=$PACKAGES" >> $GITHUB_ENV
+    - run: |
+        brew install yasm
+      if: contains( matrix.os, 'macos')
 
-    - name: "(vcpkg only) Restore any cached ports"
-      uses: lukka/run-vcpkg@v6
-      if: ${{ matrix.package_manager == 'vcpkg' }}
+    - name: Build vcpkg in the submodule directory.
+      uses: lukka/run-vcpkg@dev/always_cache_in_post_action
       with:
         setupOnly: true
         vcpkgDirectory: '${{github.workspace}}/scripts/vcpkg'
-        appendedCacheKey: '${{env.PACKAGES}}'
-        vcpkgTriplet: x64-windows-static
+        # Ensure the cache key changes any time the content of the unique manifest file changes.
+        appendedCacheKey: ${{ hashFiles( '**/vcpkg.json' ) }}
+        vcpkgTriplet: ${{ matrix.triplet }}
 
-    - name: "(vcpkg only) Setup CMake Toolchain file"
-      if: ${{ matrix.package_manager == 'vcpkg' }}
-      run: |
-        export TOOLCHAIN_FILE="${{github.workspace}}/scripts/vcpkg/scripts/buildsystems/vcpkg.cmake"
-        echo "${{github.workspace}}/scripts/vcpkg" >> $GITHUB_PATH
-        echo "TOOLCHAIN_FILE=$TOOLCHAIN_FILE" >> $GITHUB_ENV
-
-    - name: Install Dependencies
-      run: |
-        echo "vcpkg location: $(which vcpkg)"
-        echo "CMake toolchain file: $TOOLCHAIN_FILE"
-        $GITHUB_WORKSPACE/scripts/install_prerequisites.sh -v -u -m ${{matrix.package_manager}} all
-
-    - name: Configure CMake
-      working-directory: ${{runner.workspace}}
-      run: |
-        mkdir -p build && cd build
-        cmake $GITHUB_WORKSPACE -DCMAKE_BUILD_TYPE=$BUILD_TYPE -DCMAKE_TOOLCHAIN_FILE="$TOOLCHAIN_FILE"
-
-    - name: Build
-      working-directory: ${{runner.workspace}}/build
-      run: cmake --build . --config $BUILD_TYPE
-
-  emscripten:
-    runs-on: ubuntu-20.04
-
-    steps:
-    - name: Checkout Pangolin
-      uses: actions/checkout@v2
+    - name: Install dependencies with vcpkg.json, and configure and build with CMake and Ninja.
+      uses: lukka/run-cmake@v3
       with:
-        path: pangolin
+        cmakeListsOrSettingsJson: CMakeListsTxtAdvanced
+        cmakeListsTxtPath: '${{ github.workspace }}/CMakeLists.txt'
+        useVcpkgToolchainFile: true
+        buildDirectory: '${{ github.workspace }}/build/'
+        cmakeAppendedArgs: '-GNinja -DVCPKG_TARGET_TRIPLET=${{ matrix.triplet}} '
+        buildWithCMake: true
 
-    - name: Checkout Eigen
-      uses: actions/checkout@v2
-      with:
-        path: eigen
-        repository: 'libigl/eigen'
+    - run: |
+        cat /Users/runner/work/Pangolin/Pangolin/build/vcpkg-manifest-install.log
+      if: 'always()'
 
-    - name: Create Build Directories
-      run: |
-        cmake -E make_directory ${{runner.workspace}}/eigen-build
-        cmake -E make_directory ${{runner.workspace}}/pangolin-build
-
-    - name: Start Emscripten Docker
-      run: docker run -dit --name emscripten -v ${{runner.workspace}}:/src emscripten/emsdk:latest bash
-
-    - name: Configure Eigen
-      run: docker exec -t -w /src/eigen-build emscripten cmake -DCMAKE_BUILD_TYPE=$BUILD_TYPE /src/Pangolin/eigen
-
-    - name: Configure Pangolin
-      run: docker exec -t -w /src/pangolin-build emscripten emcmake cmake -DCMAKE_BUILD_TYPE=$BUILD_TYPE -DEigen3_DIR=/src/eigen-build /src/Pangolin/pangolin
-
-    - name: Build Pangolin
-      run: docker exec -t -w /src/pangolin-build emscripten cmake --build .
-
-    - name: Copy Examples to www folder
-      run: |
-        mkdir -p ${{runner.workspace}}/www/emscripten
-        rsync -zarvm --include="*/" --include="*.html" --include="*.js" --include="*.wasm" --exclude="*" ${{runner.workspace}}/pangolin-build/examples ${{runner.workspace}}/www/emscripten
-
-    - name: Deploy Examples to GitHub Pages (for pushes to master)
-      if: success() && (github.ref == 'refs/heads/master')
-      uses: crazy-max/ghaction-github-pages@v2.2.0
-      with:
-        target_branch: gh-pages
-        keep_history: true
-        # build_dir path relative to ${{runner.workspace}}/Pangolin
-        build_dir: ../www
-      env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    - run: |
+        cat /home/runner/work/Pangolin/Pangolin/build/vcpkg-manifest-install.log
+      if: 'always()'
+     
+    - run: |
+        type D:\a\Pangolin\Pangolin\build\vcpkg-manifest-install.log
+      if: 'always()'
